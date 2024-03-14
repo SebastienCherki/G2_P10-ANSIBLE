@@ -1,0 +1,80 @@
+- name: Déchiffrer le fichier secrets.yml  # Nom de la tâche
+  hosts: localhost  # Les hôtes sur lesquels cette tâche sera exécutée
+  gather_facts: no  # Ne pas collecter automatiquement les faits système
+
+  tasks:  # Début des tâches à exécuter
+    - name: Déchiffrer le fichier secrets.yml  # Nom de la tâche
+      ansible.builtin.shell:  # Utilisation du module shell pour exécuter une commande shell
+        cmd: "/root/vault/vault.sh -d"  # Commande pour décrypter le fichier secrets.yml
+      register: decrypt_output  # Enregistre le résultat de la commande
+
+- name: Récupérer le mot de passe actuel à partir du fichier credentials  # Nom de la tâche
+  hosts: "{{ target }}"  # Les hôtes sur lesquels cette tâche sera exécutée
+  gather_facts: no  # Ne pas collecter automatiquement les faits système
+
+  tasks:  # Début des tâches à exécuter
+    - name: Récupérer le mot de passe actuel à partir du fichier credentials  # Nom de la tâche
+      ansible.builtin.shell:  # Utilisation du module shell pour exécuter une commande shell
+        cmd: "grep '{{ inventory_hostname }};Administrateur;' secret/windows_credentials/credentials | cut -d ';' -f 3"  # Commande pour extraire le mot de passe actuel de Administrateur
+      register: current_password  # Enregistre le résultat de la commande
+      delegate_to: localhost  # Exécute la commande sur la machine locale
+      changed_when: false  # Indique que la tâche ne provoque pas de changement
+
+- name: Désinstaller le service SNMP sur Windows et redémarrer si nécessaire  # Nom de la tâche
+  hosts: "{{ target }}"  # Les hôtes sur lesquels cette tâche sera exécutée
+  gather_facts: no  # Ne pas collecter automatiquement les faits système
+  vars:  # Définition des variables utilisées dans la tâche
+    ansible_connection: winrm  # Type de connexion à utiliser (WinRM)
+    ansible_winrm_transport: ntlm  # Protocole de transport à utiliser pour WinRM
+    ansible_winrm_server_cert_validation: ignore  # Ignorer la validation du certificat du serveur
+    ansible_user: Administrateur  # Nom de l'utilisateur à utiliser pour la connexion
+    ansible_password: "{{ current_password.stdout }}"  # Mot de passe de l'utilisateur Administrateur
+    force_reboot: false  # Indique si le redémarrage doit être forcé
+
+  tasks:  # Début des tâches à exécuter
+    - name: Désinstaller le service SNMP  # Nom de la tâche
+      win_feature:  # Utilisation du module win_feature pour gérer les fonctionnalités Windows
+        name: SNMP-Service  # Nom de la fonctionnalité SNMP
+        state: absent  # Assure que la fonctionnalité est désinstallée
+      register: snmp_uninstall_result  # Enregistre le résultat de la tâche
+      delegate_to: "{{ inventory_hostname }}"  # Exécute la tâche sur l'hôte cible
+
+    - name: Vérifier si le service SNMP a été désinstallé  # Nom de la tâche
+      debug:  # Utilisation du module debug pour afficher un message
+        msg: "Le service SNMP a été désinstallé."  # Message à afficher
+      when: snmp_uninstall_result.changed  # Condition pour exécuter cette tâche seulement si le service a été désinstallé
+      delegate_to: "{{ inventory_hostname }}"  # Exécute la tâche sur l'hôte cible
+
+    - name: Proposer de redémarrer  # Nom de la tâche
+      pause:  # Utilisation du module pause pour attendre l'entrée de l'utilisateur
+        prompt: "Voulez-vous redémarrer la machine Windows maintenant ? (oui/non)"  # Message à afficher
+      register: reboot_prompt  # Enregistre la réponse de l'utilisateur
+      when: snmp_uninstall_result.changed  # Condition pour afficher le message seulement si le service a été désinstallé
+      delegate_to: "{{ inventory_hostname }}"  # Exécute la tâche sur l'hôte cible
+
+    - name: Redémarrer la machine si demandé  # Nom de la tâche
+      win_reboot:  # Utilisation du module win_reboot pour redémarrer la machine
+      when: snmp_uninstall_result.changed and reboot_prompt.user_input == "oui"  # Condition pour redémarrer si demandé
+      delegate_to: "{{ inventory_hostname }}"  # Exécute la tâche sur l'hôte cible
+
+    - name: Proposer un redémarrage personnalisé  # Nom de la tâche
+      pause:  # Utilisation du module pause pour attendre l'entrée de l'utilisateur
+        prompt: "Veuillez saisir le nom de la machine Windows que vous souhaitez redémarrer, ou appuyez sur Entrée pour ne pas redémarrer maintenant"  # Message à afficher
+      register: custom_reboot_prompt  # Enregistre la réponse de l'utilisateur
+      when: snmp_uninstall_result.changed and reboot_prompt.user_input == "non"  # Condition pour afficher le message seulement si le service a été désinstallé et que l'utilisateur ne souhaite pas redémarrer immédiatement
+      delegate_to: "{{ inventory_hostname }}"  # Exécute la tâche sur l'hôte cible
+
+    - name: Redémarrer la machine sélectionnée si demandé  # Nom de la tâche
+      win_reboot:  # Utilisation du module win_reboot pour redémarrer la machine sélectionnée
+      when: custom_reboot_prompt.user_input is defined and custom_reboot_prompt.user_input != "" and snmp_uninstall_result.changed and reboot_prompt.user_input == "non"  # Condition pour redémarrer si demandé
+      delegate_to: "{{ custom_reboot_prompt.user_input }}"  # Exécute la tâche sur la machine sélectionnée
+
+- name: Réencrypter le fichier secrets.yml  # Nom de la tâche
+  hosts: localhost  # Les hôtes sur lesquels cette tâche sera exécutée
+  gather_facts: no  # Ne pas collecter automatiquement les faits système
+
+  tasks:  # Début des tâches à exécuter
+    - name: Réencrypter le fichier secrets.yml  # Nom de la tâche
+      ansible.builtin.shell:  # Utilisation du module shell pour exécuter une commande shell
+        cmd: "/root/vault/vault.sh -e"  # Commande pour réencrypter le fichier secrets.yml
+      delegate_to: localhost  # Exécute la commande sur la machine locale

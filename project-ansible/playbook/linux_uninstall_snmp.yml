@@ -1,0 +1,18 @@
+- name: Désinstallation de SNMP sur AlmaLinux  # Nom de la tâche
+  hosts: "{{ target }}"  # Les hôtes sur lesquels cette tâche sera exécutée
+  become: yes  # Nécessite les privilèges d'administration pour exécuter les tâches
+
+  tasks:  # Début des tâches à exécuter
+    - name: Suppression du paquet SNMP  # Nom de la tâche
+      package:  # Utilisation du module package pour gérer les paquets
+        name: net-snmp  # Nom du paquet à supprimer
+        state: absent  # Assure que le paquet est absent
+      changed_when: false  # Indique que le statut "changed" ne doit pas être considéré comme un changement
+      register: pkg_removal  # Enregistre le résultat de la tâche de suppression du paquet
+
+    - name: Suppression du fichier de configuration SNMP  # Nom de la tâche
+      file:  # Utilisation du module file pour gérer les fichiers
+        path: /etc/snmp/snmpd.conf  # Chemin du fichier de configuration SNMP
+        state: absent  # Assure que le fichier est absent
+      changed_when: false  # Indique que le statut "changed" ne doit pas être considéré comme un changement
+      register: conf_removal  # Enregistre le résultat de la tâche de suppression du fichier de configuration
