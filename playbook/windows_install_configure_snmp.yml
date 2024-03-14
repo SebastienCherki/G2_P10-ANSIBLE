@@ -1,0 +1,69 @@
+- name: Déchiffrer le fichier secrets.yml  # Nom de la tâche
+  hosts: localhost  # Les hôtes sur lesquels cette tâche sera exécutée
+  gather_facts: no  # Ne pas collecter automatiquement les faits système
+
+  tasks:  # Début des tâches à exécuter
+    - name: Déchiffrer le fichier secrets.yml  # Nom de la tâche
+      ansible.builtin.shell:  # Utilisation du module shell pour exécuter une commande shell
+        cmd: "/root/vault/vault.sh -d"  # Commande pour décrypter le fichier secrets.yml
+      register: decrypt_output  # Enregistre le résultat de la commande
+
+- hosts: "{{ target }}"  # Les hôtes sur lesquels les tâches suivantes seront exécutées
+  gather_facts: no  # Ne pas collecter automatiquement les faits système
+
+  tasks:  # Début des tâches à exécuter
+    - name: Récupérer le mot de passe actuel à partir du fichier credentials  # Nom de la tâche
+      ansible.builtin.shell:  # Utilisation du module shell pour exécuter une commande shell
+        cmd: "grep '{{ inventory_hostname }};Administrateur;' secret/windows_credentials/credentials | cut -d ';' -f 3"  # Commande pour extraire le mot de passe actuel de Administrateur
+      register: current_password  # Enregistre le résultat de la commande
+      delegate_to: localhost  # Exécute la commande sur la machine locale
+      changed_when: false  # Indique que la tâche ne provoque pas de changement
+
+- name: Installer & Configurer le service SNMP sur Windows  # Nom de la tâche
+  hosts: "{{ target }}"  # Les hôtes sur lesquels cette tâche sera exécutée
+  gather_facts: no  # Ne pas collecter automatiquement les faits système
+  vars:  # Définition des variables utilisées dans la tâche
+    ansible_connection: winrm  # Type de connexion à utiliser (WinRM)
+    ansible_winrm_transport: ntlm  # Protocole de transport à utiliser pour WinRM
+    ansible_winrm_server_cert_validation: ignore  # Ignorer la validation du certificat du serveur
+    ansible_user: Administrateur  # Nom de l'utilisateur à utiliser pour la connexion
+    ansible_password: "{{ current_password.stdout }}"  # Mot de passe de l'utilisateur Administrateur
+
+  tasks:  # Début des tâches à exécuter
+    - name: Installer le service SNMP  # Nom de la tâche
+      win_feature:  # Utilisation du module win_feature pour gérer les fonctionnalités Windows
+        name: SNMP-Service  # Nom de la fonctionnalité SNMP
+        include_management_tools: yes  # Inclure les outils de gestion SNMP
+        state: present  # Assure que la fonctionnalité est installée
+
+    - name: Configurer la communauté SNMP et autoriser l'IP de Centreon  # Nom de la tâche
+      community.windows.win_snmp:  # Utilisation du module win_snmp pour configurer SNMP
+        community_strings:  # Liste des chaînes de communauté SNMP
+          - public  # Chaîne de communauté SNMP
+        permitted_managers:  # Liste des gestionnaires SNMP autorisés
+          - localhost  # Gestionnaire SNMP local
+          - 192.168.10.2  # Adresse IP de Centreon
+        action: set  # Action à effectuer
+      register: result_configure_snmp  # Enregistre le résultat de la tâche
+
+    - name: Redémarrer le service SNMP  # Nom de la tâche
+      win_service:  # Utilisation du module win_service pour gérer les services Windows
+        name: SNMP  # Nom du service SNMP
+        state: restarted  # Redémarre le service
+      register: result_restart_snmp  # Enregistre le résultat de la tâche
+      when: result_configure_snmp.changed  # Condition pour exécuter cette tâche seulement si la configuration a été modifiée
+
+    - name: Afficher un message si aucune modification de la configuration n'a été effectuée  # Nom de la tâche
+      debug:  # Utilisation du module debug pour afficher un message
+        msg: "Le service SNMP est déjà configuré sur cette machine."  # Message à afficher
+      when: not (result_restart_snmp.changed)  # Condition pour exécuter cette tâche seulement si aucune modification n'a été effectuée
+
+- name: Réencrypter le fichier secrets.yml  # Nom de la tâche
+  hosts: localhost  # Les hôtes sur lesquels cette tâche sera exécutée
+  gather_facts: no  # Ne pas collecter automatiquement les faits système
+
+  tasks:  # Début des tâches à exécuter
+    - name: Réencrypter le fichier secrets.yml  # Nom de la tâche
+      ansible.builtin.shell:  # Utilisation du module shell pour exécuter une commande shell
+        cmd: "/root/vault/vault.sh -e"  # Commande pour réencrypter le fichier secrets.yml
+      delegate_to: localhost  # Exécute la commande sur la machine locale

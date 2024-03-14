@@ -1,0 +1,76 @@
+- name: Supprimer un hôte de Centreon  # Nom de la tâche
+  hosts: "{{ target }}"  # Les hôtes sur lesquels cette tâche sera exécutée
+  gather_facts: false  # Désactive la collecte automatique des faits système
+
+  vars:  # Définition des variables utilisées dans la tâche
+    centreon_username: "Username"  # Nom d'utilisateur Centreon
+    centreon_password: "Password"  # Mot de passe Centreon
+
+  tasks:  # Début des tâches à exécuter
+    - name: Authentifier Centreon  # Nom de la tâche
+      uri:  # Utilisation du module URI pour effectuer une requête HTTP
+        url: "http://192.168.10.2/centreon/api/index.php?action=authenticate"  # URL pour l'authentification Centreon
+        method: POST  # Méthode de la requête HTTP
+        body_format: form-urlencoded  # Format du corps de la requête
+        body:  # Corps de la requête contenant les paramètres de connexion
+          username: "{{ centreon_username }}"  # Nom d'utilisateur Centreon
+          password: "{{ centreon_password }}"  # Mot de passe Centreon
+        return_content: yes  # Renvoyer le contenu de la réponse
+      register: auth_result  # Enregistrer le résultat de la requête dans une variable
+      delegate_to: localhost  # Exécuter la tâche sur la machine locale
+
+    # Les tâches suivantes récupèrent la liste des hôtes existants dans Centreon
+    # pour vérifier si l'hôte à supprimer est présent.
+
+    - name: Obtenir la liste des hôtes Centreon
+      uri:
+        url: "http://192.168.10.2/centreon/api/index.php?action=action&object=centreon_clapi"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+          centreon-auth-token: "{{ auth_result.json.authToken }}"
+        body_format: json
+        body:
+          action: "show"
+          object: "host"
+        return_content: yes
+      register: existing_hosts
+      delegate_to: localhost
+
+    - name: Vérifier si l'adresse IP spécifiée existe dans Centreon
+      set_fact:
+        host_to_delete: "{{ existing_hosts.json.result | selectattr('address', '==', ansible_host) | list }}"
+      delegate_to: localhost
+
+    # Si l'adresse IP à supprimer est présente dans Centreon, supprimez-la.
+
+    - name: Supprimer l'hôte de Centreon correspondant à l'adresse IP spécifiée si elle existe
+      uri:
+        url: "http://192.168.10.2/centreon/api/index.php?action=action&object=centreon_clapi"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+          centreon-auth-token: "{{ auth_result.json.authToken }}"
+        body_format: json
+        body:
+          action: "del"
+          object: "host"
+          values: "{{ inventory_hostname }}"
+      delegate_to: localhost
+      when: host_to_delete | length > 0  # Condition pour exécuter cette tâche
+
+    # Appliquer la configuration Centreon après la suppression de l'hôte.
+
+    - name: Appliquer la configuration
+      uri:
+        url: "http://192.168.10.2/centreon/api/index.php?action=action&object=centreon_clapi"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+          centreon-auth-token: "{{ auth_result.json.authToken }}"
+        body_format: json
+        body:
+          action: "APPLYCFG"
+          values: "1"
+      when: host_to_delete | length > 0  # Condition pour exécuter cette tâche
+      delegate_to: localhost

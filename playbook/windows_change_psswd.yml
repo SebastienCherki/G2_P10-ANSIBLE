@@ -1,0 +1,46 @@
+- name: Changer le mot de passe de l'utilisateur Administrateur sur les machines Windows  # Nom de la tâche
+  hosts: "{{ target }}"  # Les hôtes sur lesquels cette tâche sera exécutée
+  gather_facts: false  # Désactive la collecte automatique des faits système
+  vars:  # Définition des variables utilisées dans la tâche
+    ansible_user: Administrateur  # Nom de l'utilisateur à utiliser pour la connexion
+
+  tasks:  # Début des tâches à exécuter
+    - name: Décrypter le fichier secrets.yml  # Nom de la tâche
+      ansible.builtin.shell:  # Utilisation du module shell pour exécuter une commande shell
+        cmd: "/root/vault/vault.sh -d"  # Commande pour décrypter le fichier secrets.yml
+      register: decrypt_output  # Enregistre le résultat de la commande
+      delegate_to: localhost  # Exécute la commande sur la machine locale
+
+    - name: Générer un mot de passe aléatoire  # Nom de la tâche
+      ansible.builtin.set_fact:  # Utilisation du module set_fact pour définir une variable
+        random_password: "{{ lookup('password', '/dev/null length=10 chars=ascii_letters,digits') }}"  # Génère un mot de passe aléatoire de 10 caractères
+      delegate_to: localhost  # Exécute la tâche sur la machine locale
+
+    - name: Récupérer le mot de passe actuel à partir du fichier credentials  # Nom de la tâche
+      ansible.builtin.shell:  # Utilisation du module shell pour exécuter une commande shell
+        cmd: "grep '{{ inventory_hostname }};Administrateur;' secret/windows_credentials/credentials | cut -d ';' -f 3"  # Commande pour extraire le mot de passe actuel de Administrateur
+      register: current_password  # Enregistre le résultat de la commande
+      delegate_to: localhost  # Exécute la commande sur la machine locale
+      changed_when: false  # Indique que la tâche ne provoque pas de changement
+
+    - name: Changer le mot de passe de l'utilisateur Administrateur  # Nom de la tâche
+      win_user:  # Utilisation du module win_user pour gérer les utilisateurs Windows
+        name: Administrateur  # Nom de l'utilisateur à modifier
+        password: "{{ random_password }}"  # Nouveau mot de passe généré
+      vars:  # Définition des variables spécifiques à cette tâche
+        ansible_password: "{{ current_password.stdout }}"  # Mot de passe actuel à utiliser pour la connexion
+        ansible_connection: winrm  # Type de connexion à utiliser (WinRM)
+        ansible_winrm_transport: ntlm  # Protocole de transport à utiliser pour WinRM
+        ansible_winrm_server_cert_validation: ignore  # Ignorer la validation du certificat du serveur
+
+    - name: Mettre à jour le fichier de credentials avec le nouveau mot de passe  # Nom de la tâche
+      ansible.builtin.replace:  # Utilisation du module replace pour remplacer du texte dans un fichier
+        path: "secret/windows_credentials/credentials"  # Chemin du fichier à mettre à jour
+        regexp: "{{ inventory_hostname }};Administrateur;(.*)"  # Expression régulière pour rechercher le mot de passe actuel
+        replace: "{{ inventory_hostname }};Administrateur;{{ random_password }}"  # Remplace le mot de passe actuel par le nouveau mot de passe
+      delegate_to: localhost  # Exécute la tâche sur la machine locale
+
+    - name: Réencrypter le fichier secrets.yml  # Nom de la tâche
+      ansible.builtin.shell:  # Utilisation du module shell pour exécuter une commande shell
+        cmd: "/root/vault/vault.sh -e"  # Commande pour réencrypter le fichier secrets.yml
+      delegate_to: localhost  # Exécute la commande sur la machine locale

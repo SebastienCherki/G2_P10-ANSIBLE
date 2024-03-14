@@ -1,0 +1,148 @@
+- name: Ajouter un hôte à Centreon avec vérification de l'IP
+  hosts: "{{ target }}"  # Nom des hôtes cibles pour l'exécution de la tâche
+  gather_facts: false  # Ne pas récupérer automatiquement les faits (informations système) des hôtes
+
+  vars:  # Déclaration des variables utilisées dans la tâche
+    centreon_username: "Username"  # Nom d'utilisateur Centreon
+    centreon_password: "Password"  # Mot de passe Centreon
+    centreon_host_alias: "Linux-Server"  # Alias de l'hôte Centreon
+    centreon_host_templates: "OS-Linux-SNMP-custom"  # Modèles d'hôte Centreon
+    centreon_instance_name: "central"  # Nom de l'instance Centreon
+    centreon_hostgroup: "Linux-Server"  # Groupe d'hôtes Centreon
+    snmp_community: "public"  # Communauté SNMP
+    snmp_version: "2c"  # Version SNMP
+    timezone: "Europe/Paris"  # Fuseau horaire
+
+  tasks:  # Début de la définition des tâches à exécuter
+    - name: Authentification Centreon  # Nom de la tâche
+      uri:  # Utilisation du module URI pour envoyer des requêtes HTTP
+        url: "http://192.168.10.2/centreon/api/index.php?action=authenticate"  # URL pour l'authentification Centreon
+        method: POST  # Méthode de la requête HTTP
+        body_format: form-urlencoded  # Format du corps de la requête
+        body:  # Corps de la requête contenant les paramètres de connexion
+          username: "{{ centreon_username }}"  # Nom d'utilisateur Centreon
+          password: "{{ centreon_password }}"  # Mot de passe Centreon
+        return_content: yes  # Retourner le contenu de la réponse
+      register: auth_result  # Enregistrer le résultat de la requête dans une variable
+      delegate_to: localhost  # Exécuter la tâche sur la machine locale
+
+    # Les autres tâches suivent le même schéma avec des commentaires détaillant chaque étape
+    # Expliquant les objectifs et les paramètres utilisés dans chaque requête
+    # pour effectuer différentes opérations sur le système Centreon.
+    # Chaque tâche est conditionnée par la non-existence de l'IP dans Centreon,
+    # afin d'éviter d'ajouter des doublons.
+
+    - name: Vérifier si l'IP existe déjà
+      uri:
+        url: "http://192.168.10.2/centreon/api/index.php?action=action&object=centreon_clapi"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+          centreon-auth-token: "{{ auth_result.json.authToken }}"
+        body_format: json
+        body:
+          action: "show"
+          object: "host"
+        return_content: yes
+      register: existing_hosts
+      delegate_to: localhost
+
+    - name: Vérifier l'existence de l'IP
+      set_fact:
+        ip_already_exists: "{{ ansible_host in existing_hosts.json.result | map(attribute='address') | list }}"
+      delegate_to: localhost
+
+    - name: Afficher un message si l'IP existe déjà
+      debug:
+        msg: "L'IP {{ ansible_host }} existe déjà dans Centreon. Aucune action n'a été effectuée."
+      when: ip_already_exists
+      delegate_to: localhost
+
+    - name: Ajouter un hôte à Centreon
+      uri:
+        url: "http://192.168.10.2/centreon/api/index.php?action=action&object=centreon_clapi"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+          centreon-auth-token: "{{ auth_result.json.authToken }}"
+        body_format: json
+        body:
+          action: "add"
+          object: "host"
+          values: "{{ inventory_hostname }};{{ centreon_host_alias }};{{ ansible_host }};{{ centreon_host_templates }};{{ centreon_instance_name }};{{ centreon_hostgroup }}"
+      when: not ip_already_exists
+      delegate_to: localhost
+
+    - name: Définir le snmp_community de l'hôte
+      uri:
+        url: "http://192.168.10.2/centreon/api/index.php?action=action&object=centreon_clapi"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+          centreon-auth-token: "{{ auth_result.json.authToken }}"
+        body_format: json
+        body:
+          action: "setparam"
+          object: "host"
+          values: "{{ inventory_hostname }};snmp_community;{{ snmp_community }}"
+      when: not ip_already_exists
+      delegate_to: localhost
+
+    - name: Définir le snmp_version de l'hôte
+      uri:
+        url: "http://192.168.10.2/centreon/api/index.php?action=action&object=centreon_clapi"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+          centreon-auth-token: "{{ auth_result.json.authToken }}"
+        body_format: json
+        body:
+          action: "setparam"
+          object: "host"
+          values: "{{ inventory_hostname }};snmp_version;{{ snmp_version }}"
+      when: not ip_already_exists
+      delegate_to: localhost
+
+    - name: Définir le fuseau horaire de l'hôte
+      uri:
+        url: "http://192.168.10.2/centreon/api/index.php?action=action&object=centreon_clapi"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+          centreon-auth-token: "{{ auth_result.json.authToken }}"
+        body_format: json
+        body:
+          action: "setparam"
+          object: "host"
+          values: "{{ inventory_hostname }};timezone;{{ timezone }}"
+      when: not ip_already_exists
+      delegate_to: localhost
+
+    - name: Ajouter des services liés au modèle d'hôte
+      uri:
+        url: "http://192.168.10.2/centreon/api/index.php?action=action&object=centreon_clapi"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+          centreon-auth-token: "{{ auth_result.json.authToken }}"
+        body_format: json
+        body:
+          action: "applytpl"
+          object: "host"
+          values: "{{ inventory_hostname }}"
+      when: not ip_already_exists
+      delegate_to: localhost
+
+    - name: Appliquer la configuration
+      uri:
+        url: "http://192.168.10.2/centreon/api/index.php?action=action&object=centreon_clapi"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+          centreon-auth-token: "{{ auth_result.json.authToken }}"
+        body_format: json
+        body:
+          action: "APPLYCFG"
+          values: "1"
+      when: not ip_already_exists
+      delegate_to: localhost

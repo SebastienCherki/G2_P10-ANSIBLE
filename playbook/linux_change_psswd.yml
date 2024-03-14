@@ -1,0 +1,34 @@
+- name: Changer le mot de passe root sur les machines Linux  # Nom de la tâche
+  hosts: "{{ target }}"  # Les hôtes sur lesquels cette tâche sera exécutée
+  gather_facts: false  # Désactive la collecte automatique des faits système
+  become: yes  # Utilise l'élévation de privilèges pour devenir superutilisateur
+
+  tasks:  # Début des tâches à exécuter
+    - name: Décrypter le fichier secrets.yml  # Nom de la tâche
+      ansible.builtin.shell:  # Utilisation du module shell pour exécuter une commande shell
+        cmd: "/root/vault2/vault2.sh -d"  # Commande shell pour décrypter le fichier secrets.yml
+      register: decrypt_output  # Enregistrer la sortie de la commande dans une variable
+      delegate_to: localhost  # Exécuter la tâche sur la machine locale
+
+    - name: Générer un mot de passe aléatoire  # Nom de la tâche
+      ansible.builtin.set_fact:  # Utilisation du module set_fact pour définir une nouvelle variable
+        random_password: "{{ lookup('password', '/dev/null length=12 chars=ascii_letters,digits') }}"  # Générer un mot de passe aléatoire
+      delegate_to: localhost  # Exécuter la tâche sur la machine locale
+
+    - name: Définir le mot de passe root avec le mot de passe aléatoire généré  # Nom de la tâche
+      ansible.builtin.user:  # Utilisation du module user pour gérer les utilisateurs système
+        name: root  # Nom de l'utilisateur
+        password: "{{ random_password | password_hash('sha512') }}"  # Définir le mot de passe avec le mot de passe aléatoire hashé
+      changed_when: true  # Marquer la tâche comme modifiée si elle a effectivement changé quelque chose
+
+    - name: Mettre à jour le fichier de credentials avec le nouveau mot de passe  # Nom de la tâche
+      ansible.builtin.replace:  # Utilisation du module replace pour remplacer du texte dans un fichier
+        path: "secret/linux_credentials/credentials"  # Chemin vers le fichier à modifier
+        regexp: "{{ inventory_hostname }};root;(.*)"  # Expression régulière pour rechercher le mot de passe root existant
+        replace: "{{ inventory_hostname }};root;{{ random_password }}"  # Remplacer le mot de passe root existant par le nouveau mot de passe
+      delegate_to: localhost  # Exécuter la tâche sur la machine locale
+
+    - name: Réencrypter le fichier secrets.yml  # Nom de la tâche
+      ansible.builtin.shell:  # Utilisation du module shell pour exécuter une commande shell
+        cmd: "/root/vault2/vault2.sh -e"  # Commande shell pour réencrypter le fichier secrets.yml
+      delegate_to: localhost  # Exécuter la tâche sur la machine locale
