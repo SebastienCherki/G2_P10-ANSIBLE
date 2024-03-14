@@ -69,12 +69,12 @@
       when: custom_reboot_prompt.user_input is defined and custom_reboot_prompt.user_input != "" and snmp_uninstall_result.changed and reboot_prompt.user_input == "non"  # Condition pour redémarrer si demandé
       delegate_to: "{{ custom_reboot_prompt.user_input }}"  # Exécute la tâche sur la machine sélectionnée
 
-- name: Rechiffrer le fichier secrets.yml  # Nom de la tâche
+- name: Chiffrer le fichier secrets.yml  # Nom de la tâche
   hosts: localhost  # Les hôtes sur lesquels cette tâche sera exécutée
   gather_facts: no  # Ne pas collecter automatiquement les faits système
 
   tasks:  # Début des tâches à exécuter
-    - name: Rechiffrer le fichier secrets.yml  # Nom de la tâche
+    - name: Chiffrer le fichier secrets.yml  # Nom de la tâche
       ansible.builtin.shell:  # Utilisation du module shell pour exécuter une commande shell
-        cmd: "/root/vault/vault.sh -e"  # Commande pour rechiffrer le fichier secrets.yml
+        cmd: "/root/vault/vault.sh -e"  # Commande pour chiffrer le fichier secrets.yml
       delegate_to: localhost  # Exécute la commande sur la machine locale
