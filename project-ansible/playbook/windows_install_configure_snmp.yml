@@ -5,7 +5,7 @@
   tasks:  # Début des tâches à exécuter
     - name: Déchiffrer le fichier secrets.yml  # Nom de la tâche
       ansible.builtin.shell:  # Utilisation du module shell pour exécuter une commande shell
-        cmd: "/root/vault/vault.sh -d"  # Commande pour décrypter le fichier secrets.yml
+        cmd: "/root/vault/vault.sh -d"  # Commande pour déchiffrer le fichier secrets.yml
       register: decrypt_output  # Enregistre le résultat de la commande
 
 - hosts: "{{ target }}"  # Les hôtes sur lesquels les tâches suivantes seront exécutées
@@ -58,12 +58,12 @@
         msg: "Le service SNMP est déjà configuré sur cette machine."  # Message à afficher
       when: not (result_restart_snmp.changed)  # Condition pour exécuter cette tâche seulement si aucune modification n'a été effectuée
 
-- name: Réencrypter le fichier secrets.yml  # Nom de la tâche
+- name: Chiffrer le fichier secrets.yml  # Nom de la tâche
   hosts: localhost  # Les hôtes sur lesquels cette tâche sera exécutée
   gather_facts: no  # Ne pas collecter automatiquement les faits système
 
   tasks:  # Début des tâches à exécuter
-    - name: Réencrypter le fichier secrets.yml  # Nom de la tâche
+    - name: Chiffrer le fichier secrets.yml  # Nom de la tâche
       ansible.builtin.shell:  # Utilisation du module shell pour exécuter une commande shell
-        cmd: "/root/vault/vault.sh -e"  # Commande pour réencrypter le fichier secrets.yml
+        cmd: "/root/vault/vault.sh -e"  # Commande pour chiffrer le fichier secrets.yml
       delegate_to: localhost  # Exécute la commande sur la machine locale
