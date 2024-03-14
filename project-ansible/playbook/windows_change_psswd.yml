@@ -5,9 +5,9 @@
     ansible_user: Administrateur  # Nom de l'utilisateur à utiliser pour la connexion
 
   tasks:  # Début des tâches à exécuter
-    - name: Décrypter le fichier secrets.yml  # Nom de la tâche
+    - name: Déchiffrer le fichier secrets.yml  # Nom de la tâche
       ansible.builtin.shell:  # Utilisation du module shell pour exécuter une commande shell
-        cmd: "/root/vault/vault.sh -d"  # Commande pour décrypter le fichier secrets.yml
+        cmd: "/root/vault/vault.sh -d"  # Commande pour déchiffrer  le fichier secrets.yml
       register: decrypt_output  # Enregistre le résultat de la commande
       delegate_to: localhost  # Exécute la commande sur la machine locale
 
@@ -40,7 +40,7 @@
         replace: "{{ inventory_hostname }};Administrateur;{{ random_password }}"  # Remplace le mot de passe actuel par le nouveau mot de passe
       delegate_to: localhost  # Exécute la tâche sur la machine locale
 
-    - name: Réencrypter le fichier secrets.yml  # Nom de la tâche
+    - name: Chiffrer le fichier secrets.yml  # Nom de la tâche
       ansible.builtin.shell:  # Utilisation du module shell pour exécuter une commande shell
-        cmd: "/root/vault/vault.sh -e"  # Commande pour réencrypter le fichier secrets.yml
+        cmd: "/root/vault/vault.sh -e"  # Commande pour chiffrer le fichier secrets.yml
       delegate_to: localhost  # Exécute la commande sur la machine locale
